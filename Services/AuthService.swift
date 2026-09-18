@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Supabase
 
 // MARK: - Auth State
 
@@ -8,11 +9,14 @@ enum AuthState: Equatable {
     case signedOut
     case signingIn
     case signedIn(HSUser)
+    case needsProfile          // signed in but profile incomplete
+    case needsEmailVerification
     case error(String)
 
     static func == (lhs: AuthState, rhs: AuthState) -> Bool {
         switch (lhs, rhs) {
-        case (.unknown, .unknown), (.signedOut, .signedOut), (.signingIn, .signingIn):
+        case (.unknown, .unknown), (.signedOut, .signedOut), (.signingIn, .signingIn),
+             (.needsProfile, .needsProfile), (.needsEmailVerification, .needsEmailVerification):
             return true
         case (.signedIn(let a), .signedIn(let b)):
             return a.id == b.id
@@ -33,166 +37,190 @@ final class AuthService: ObservableObject {
     @Published var state: AuthState = .unknown
     @Published var currentUser: HSUser?
 
-    private let tokenKey = "hivespace_auth_token"
-    private let refreshTokenKey = "hivespace_refresh_token"
-    private let tokenExpiryKey = "hivespace_token_expiry"
+    private var supabase: SupabaseClient? {
+        SupabaseClientProvider.shared.client
+    }
 
     var isAuthenticated: Bool {
         if case .signedIn = state { return true }
         return false
     }
 
-    var authToken: String? {
-        UserDefaults.standard.string(forKey: tokenKey)
+    var isDemoMode: Bool {
+        !SupabaseEnvironment.isConfigured
     }
 
     private init() {}
 
-    // MARK: - Token Management
+    // MARK: - Session Restore
 
-    func saveTokens(auth: String, refresh: String, expiry: Date) {
-        UserDefaults.standard.set(auth, forKey: tokenKey)
-        UserDefaults.standard.set(refresh, forKey: refreshTokenKey)
-        UserDefaults.standard.set(expiry.timeIntervalSince1970, forKey: tokenExpiryKey)
-    }
+    func restoreSession() async {
+        guard let client = supabase else {
+            // No Supabase configured — fall back to demo
+            state = .signedOut
+            return
+        }
 
-    func clearTokens() {
-        UserDefaults.standard.removeObject(forKey: tokenKey)
-        UserDefaults.standard.removeObject(forKey: refreshTokenKey)
-        UserDefaults.standard.removeObject(forKey: tokenExpiryKey)
-    }
-
-    var isTokenExpired: Bool {
-        let expiry = UserDefaults.standard.double(forKey: tokenExpiryKey)
-        guard expiry > 0 else { return true }
-        return Date().timeIntervalSince1970 >= expiry
+        do {
+            let session = try await client.auth.session
+            let profile = try await fetchProfile(userID: session.user.id)
+            if profile.displayName.isEmpty {
+                state = .needsProfile
+            } else {
+                currentUser = profile
+                state = .signedIn(profile)
+            }
+        } catch {
+            state = .signedOut
+        }
     }
 
     // MARK: - Sign In
 
     func signIn(email: String, password: String) async {
-        state = .signingIn
-
-        // For demo/offline mode: authenticate locally
-        if shouldUseDemoMode {
-            await simulateSignIn(email: email)
+        guard let client = supabase else {
+            await demoSignIn(email: email)
             return
         }
 
-        // Live API call
-        do {
-            let response: AuthResponse = try await NetworkService.shared.request(
-                endpoint: .signIn,
-                body: SignInRequest(email: email, password: password),
-                queryItems: nil
-            )
+        state = .signingIn
 
-            saveTokens(auth: response.token, refresh: response.refreshToken, expiry: response.expiresAt)
-            NetworkService.shared.setAuthToken(response.token)
-            currentUser = response.user
-            state = .signedIn(response.user)
+        do {
+            let session = try await client.auth.signIn(
+                email: email,
+                password: password
+            )
+            let profile = try await fetchProfile(userID: session.user.id)
+            if profile.displayName.isEmpty {
+                state = .needsProfile
+            } else {
+                currentUser = profile
+                state = .signedIn(profile)
+            }
         } catch {
-            // Fall back to demo mode if server is unreachable
-            await simulateSignIn(email: email)
+            state = .error(friendlyError(error))
         }
     }
 
     // MARK: - Sign Up
 
     func signUp(email: String, password: String, displayName: String, username: String) async {
+        guard let client = supabase else {
+            await demoSignIn(email: email, displayName: displayName, username: username)
+            return
+        }
+
         state = .signingIn
 
-        if shouldUseDemoMode {
-            await simulateSignIn(email: email, displayName: displayName, username: username)
-            return
-        }
-
         do {
-            let response: AuthResponse = try await NetworkService.shared.request(
-                endpoint: .signUp,
-                body: SignUpRequest(email: email, password: password, displayName: displayName, username: username),
-                queryItems: nil
+            let result = try await client.auth.signUp(
+                email: email,
+                password: password,
+                data: [
+                    "display_name": .string(displayName),
+                    "username": .string(username)
+                ]
             )
 
-            saveTokens(auth: response.token, refresh: response.refreshToken, expiry: response.expiresAt)
-            NetworkService.shared.setAuthToken(response.token)
-            currentUser = response.user
-            state = .signedIn(response.user)
-        } catch {
-            await simulateSignIn(email: email, displayName: displayName, username: username)
-        }
-    }
-
-    // MARK: - Session Restore
-
-    func restoreSession() async {
-        // Check if we have a stored token
-        let storedToken = authToken
-        guard let token = storedToken, !isTokenExpired else {
-            // Try loading from persistence
-            if let snapshot = await PersistenceService.shared.loadSnapshot() {
-                currentUser = snapshot.currentUser
-                state = .signedIn(snapshot.currentUser)
-                NetworkService.shared.setAuthToken(storedToken ?? "")
+            // Check if email confirmation is required
+            if result.session == nil {
+                state = .needsEmailVerification
                 return
             }
-            state = .signedOut
-            return
-        }
 
-        NetworkService.shared.setAuthToken(token)
-
-        // Try to fetch fresh profile from API
-        do {
-            let user: HSUser = try await NetworkService.shared.request(
-                endpoint: .profile,
-                body: nil as String?,
-                queryItems: nil
-            )
-            currentUser = user
-            state = .signedIn(user)
+            let profile = try await fetchProfile(userID: result.user.id)
+            currentUser = profile
+            state = .signedIn(profile)
         } catch {
-            // Fall back to cached profile
-            if let snapshot = await PersistenceService.shared.loadSnapshot() {
-                currentUser = snapshot.currentUser
-                state = .signedIn(snapshot.currentUser)
-            } else {
-                state = .signedOut
-            }
+            state = .error(friendlyError(error))
         }
     }
 
     // MARK: - Sign Out
 
     func signOut() async {
-        clearTokens()
-        NetworkService.shared.setAuthToken(nil)
+        if let client = supabase {
+            try? await client.auth.signOut()
+        }
         currentUser = nil
         state = .signedOut
     }
 
-    // MARK: - Demo Mode
+    // MARK: - Password Reset
 
-    private var shouldUseDemoMode: Bool {
-        // Use demo mode when no server is configured or for development
-        true // Set to false when your API server is live
+    func resetPassword(email: String) async throws {
+        guard let client = supabase else {
+            throw AuthError.demoMode
+        }
+        try await client.auth.resetPasswordForEmail(email)
     }
 
-    private func simulateSignIn(email: String, displayName: String? = nil, username: String? = nil) async {
-        // Small delay to simulate network
-        try? await Task.sleep(for: .milliseconds(800))
+    // MARK: - Profile Fetch
+
+    func fetchProfile(userID: UUID) async throws -> HSUser {
+        guard let client = supabase else {
+            throw AuthError.demoMode
+        }
+
+        struct ProfileRow: Decodable {
+            let id: UUID
+            let display_name: String
+            let username: String
+            let email: String
+            let avatar_url: String?
+            let created_at: String
+        }
+
+        let row: ProfileRow = try await client
+            .from("profiles")
+            .select()
+            .eq("id", value: userID.uuidString)
+            .single()
+            .execute()
+            .value
+
+        return HSUser(
+            id: row.id,
+            displayName: row.display_name,
+            username: row.username,
+            email: row.email,
+            avatarURL: row.avatar_url,
+            colonyIDs: [],
+            createdAt: ISO8601DateFormatter().date(from: row.created_at) ?? .now
+        )
+    }
+
+    // MARK: - Update Profile
+
+    func updateProfile(displayName: String, username: String) async throws {
+        guard let client = supabase else { return }
+        guard let userID = try? await client.auth.session.user.id else { return }
+
+        struct ProfileUpdate: Encodable {
+            let display_name: String
+            let username: String
+        }
+
+        try await client
+            .from("profiles")
+            .update(ProfileUpdate(display_name: displayName, username: username))
+            .eq("id", value: userID.uuidString)
+            .execute()
+
+        let profile = try await fetchProfile(userID: userID)
+        currentUser = profile
+        state = .signedIn(profile)
+    }
+
+    // MARK: - Demo Mode (DEBUG previews + unconfigured environments)
+
+    private func demoSignIn(email: String, displayName: String? = nil, username: String? = nil) async {
+        state = .signingIn
+        try? await Task.sleep(for: .milliseconds(500))
 
         let name = displayName ?? email.components(separatedBy: "@").first?.capitalized ?? "User"
         let uname = username ?? email.components(separatedBy: "@").first ?? "user"
 
-        // Check if we have saved data for this user
-        if let snapshot = await PersistenceService.shared.loadSnapshot() {
-            currentUser = snapshot.currentUser
-            state = .signedIn(snapshot.currentUser)
-            return
-        }
-
-        // Create a fresh user with sample data
         let user = HSUser(
             id: UUID(),
             displayName: name,
@@ -202,9 +230,48 @@ final class AuthService: ObservableObject {
             colonyIDs: [],
             createdAt: .now
         )
-
-        saveTokens(auth: "demo-\(UUID().uuidString)", refresh: "refresh-\(UUID().uuidString)", expiry: .distantFuture)
         currentUser = user
         state = .signedIn(user)
+    }
+
+    // MARK: - Error Mapping
+
+    private func friendlyError(_ error: Error) -> String {
+        let message = error.localizedDescription.lowercased()
+        if message.contains("invalid login") || message.contains("invalid_credentials") {
+            return "Incorrect email or password."
+        }
+        if message.contains("email not confirmed") {
+            return "Please check your inbox and confirm your email first."
+        }
+        if message.contains("user already registered") || message.contains("already been registered") {
+            return "An account with that email already exists. Try signing in."
+        }
+        if message.contains("password") && message.contains("short") {
+            return "Password must be at least 6 characters."
+        }
+        if message.contains("rate limit") || message.contains("too many") {
+            return "Too many attempts. Please wait a moment and try again."
+        }
+        if message.contains("network") || message.contains("offline") || message.contains("connection") {
+            return "No internet connection. Check your network and try again."
+        }
+        return "Something went wrong: \(error.localizedDescription)"
+    }
+}
+
+// MARK: - Auth Errors
+
+enum AuthError: LocalizedError {
+    case demoMode
+    case notAuthenticated
+    case profileNotFound
+
+    var errorDescription: String? {
+        switch self {
+        case .demoMode: return "Supabase is not configured. Running in demo mode."
+        case .notAuthenticated: return "You must be signed in."
+        case .profileNotFound: return "Profile not found."
+        }
     }
 }

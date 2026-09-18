@@ -30,6 +30,15 @@ DerivedData/
 .build/
 Packages/
 
+# Secrets & Environment
+# Never commit real Supabase credentials or local env overrides.
+# Use Xcode scheme environment variables instead (stored in xcuserdata/).
+supabase-config.json
+*.env
+*.env.*
+!*.env.example.*
+!supabase-config.example.json
+
 # Misc
 *.swp
 *~
