@@ -1,6 +1,5 @@
 import Foundation
 import SwiftUI
-import Supabase
 
 // MARK: - Auth State
 
@@ -30,6 +29,8 @@ enum AuthState: Equatable {
 
 // MARK: - Auth Service
 
+/// Coordinates authentication state. All Supabase operations flow through
+/// injected AuthRepository and ProfileRepository — no direct Supabase imports.
 @MainActor
 final class AuthService: ObservableObject {
     static let shared = AuthService()
@@ -37,9 +38,8 @@ final class AuthService: ObservableObject {
     @Published var state: AuthState = .unknown
     @Published var currentUser: HSUser?
 
-    private var supabase: SupabaseClient? {
-        SupabaseClientProvider.shared.client
-    }
+    private var authRepo: any AuthRepository { RepositoryContainer.shared.auth }
+    private var profileRepo: any ProfileRepository { RepositoryContainer.shared.profile }
 
     var isAuthenticated: Bool {
         if case .signedIn = state { return true }
@@ -47,7 +47,11 @@ final class AuthService: ObservableObject {
     }
 
     var isDemoMode: Bool {
-        !SupabaseEnvironment.isConfigured
+        #if DEBUG
+        return !SupabaseEnvironment.isConfigured
+        #else
+        return false
+        #endif
     }
 
     private init() {}
@@ -55,21 +59,17 @@ final class AuthService: ObservableObject {
     // MARK: - Session Restore
 
     func restoreSession() async {
-        guard let client = supabase else {
-            // No Supabase configured — fall back to demo
+        guard !isDemoMode else {
             state = .signedOut
             return
         }
 
         do {
-            let session = try await client.auth.session
-            let profile = try await fetchProfile(userID: session.user.id)
-            if profile.displayName.isEmpty {
-                state = .needsProfile
-            } else {
-                currentUser = profile
-                state = .signedIn(profile)
+            guard let userID = try await authRepo.restoreSession() else {
+                state = .signedOut
+                return
             }
+            await resolveProfile(userID: userID)
         } catch {
             state = .signedOut
         }
@@ -78,25 +78,19 @@ final class AuthService: ObservableObject {
     // MARK: - Sign In
 
     func signIn(email: String, password: String) async {
-        guard let client = supabase else {
+        guard !isDemoMode else {
+            #if DEBUG
             await demoSignIn(email: email)
+            #else
+            state = .error("Supabase is not configured. Cannot sign in.")
+            #endif
             return
         }
 
         state = .signingIn
-
         do {
-            let session = try await client.auth.signIn(
-                email: email,
-                password: password
-            )
-            let profile = try await fetchProfile(userID: session.user.id)
-            if profile.displayName.isEmpty {
-                state = .needsProfile
-            } else {
-                currentUser = profile
-                state = .signedIn(profile)
-            }
+            let userID = try await authRepo.signIn(email: email, password: password)
+            await resolveProfile(userID: userID)
         } catch {
             state = .error(friendlyError(error))
         }
@@ -105,32 +99,26 @@ final class AuthService: ObservableObject {
     // MARK: - Sign Up
 
     func signUp(email: String, password: String, displayName: String, username: String) async {
-        guard let client = supabase else {
+        guard !isDemoMode else {
+            #if DEBUG
             await demoSignIn(email: email, displayName: displayName, username: username)
+            #else
+            state = .error("Supabase is not configured. Cannot sign up.")
+            #endif
             return
         }
 
         state = .signingIn
-
         do {
-            let result = try await client.auth.signUp(
-                email: email,
-                password: password,
-                data: [
-                    "display_name": .string(displayName),
-                    "username": .string(username)
-                ]
-            )
-
-            // Check if email confirmation is required
-            if result.session == nil {
+            guard let userID = try await authRepo.signUp(
+                email: email, password: password,
+                displayName: displayName, username: username
+            ) else {
+                // nil means email confirmation is required
                 state = .needsEmailVerification
                 return
             }
-
-            let profile = try await fetchProfile(userID: result.user.id)
-            currentUser = profile
-            state = .signedIn(profile)
+            await resolveProfile(userID: userID)
         } catch {
             state = .error(friendlyError(error))
         }
@@ -139,8 +127,10 @@ final class AuthService: ObservableObject {
     // MARK: - Sign Out
 
     func signOut() async {
-        if let client = supabase {
-            try? await client.auth.signOut()
+        do {
+            try await authRepo.signOut()
+        } catch {
+            // Sign-out failed server-side; still clear local state
         }
         currentUser = nil
         state = .signedOut
@@ -149,71 +139,56 @@ final class AuthService: ObservableObject {
     // MARK: - Password Reset
 
     func resetPassword(email: String) async throws {
-        guard let client = supabase else {
-            throw AuthError.demoMode
-        }
-        try await client.auth.resetPasswordForEmail(email)
-    }
-
-    // MARK: - Profile Fetch
-
-    func fetchProfile(userID: UUID) async throws -> HSUser {
-        guard let client = supabase else {
-            throw AuthError.demoMode
-        }
-
-        struct ProfileRow: Decodable {
-            let id: UUID
-            let display_name: String
-            let username: String
-            let email: String
-            let avatar_url: String?
-            let created_at: String
-        }
-
-        let row: ProfileRow = try await client
-            .from("profiles")
-            .select()
-            .eq("id", value: userID.uuidString)
-            .single()
-            .execute()
-            .value
-
-        return HSUser(
-            id: row.id,
-            displayName: row.display_name,
-            username: row.username,
-            email: row.email,
-            avatarURL: row.avatar_url,
-            colonyIDs: [],
-            createdAt: ISO8601DateFormatter().date(from: row.created_at) ?? .now
-        )
+        try await authRepo.resetPassword(email: email)
     }
 
     // MARK: - Update Profile
 
     func updateProfile(displayName: String, username: String) async throws {
-        guard let client = supabase else { return }
-        guard let userID = try? await client.auth.session.user.id else { return }
-
-        struct ProfileUpdate: Encodable {
-            let display_name: String
-            let username: String
+        guard var user = currentUser else {
+            throw AuthError.notAuthenticated
         }
-
-        try await client
-            .from("profiles")
-            .update(ProfileUpdate(display_name: displayName, username: username))
-            .eq("id", value: userID.uuidString)
-            .execute()
-
-        let profile = try await fetchProfile(userID: userID)
-        currentUser = profile
-        state = .signedIn(profile)
+        user.displayName = displayName
+        user.username = username
+        let updated = try await profileRepo.updateProfile(user)
+        currentUser = updated
+        state = .signedIn(updated)
     }
 
-    // MARK: - Demo Mode (DEBUG previews + unconfigured environments)
+    // MARK: - Profile Resolution
 
+    /// After auth succeeds, fetch the profile and route to the correct state.
+    /// Handles the profile-trigger race condition with a brief retry.
+    private func resolveProfile(userID: UUID) async {
+        do {
+            let profile = try await fetchProfileWithRetry(userID: userID)
+            if profile.displayName.isEmpty || profile.username.isEmpty {
+                currentUser = profile
+                state = .needsProfile
+            } else {
+                currentUser = profile
+                state = .signedIn(profile)
+            }
+        } catch {
+            // Profile not found — may need setup
+            state = .needsProfile
+        }
+    }
+
+    /// The `handle_new_user` trigger may not have completed when we first fetch.
+    /// Retry once after a short delay.
+    private func fetchProfileWithRetry(userID: UUID) async throws -> HSUser {
+        do {
+            return try await profileRepo.fetchProfile(userID: userID)
+        } catch {
+            try await Task.sleep(for: .milliseconds(800))
+            return try await profileRepo.fetchProfile(userID: userID)
+        }
+    }
+
+    // MARK: - Demo Mode (DEBUG previews only)
+
+    #if DEBUG
     private func demoSignIn(email: String, displayName: String? = nil, username: String? = nil) async {
         state = .signingIn
         try? await Task.sleep(for: .milliseconds(500))
@@ -233,6 +208,7 @@ final class AuthService: ObservableObject {
         currentUser = user
         state = .signedIn(user)
     }
+    #endif
 
     // MARK: - Error Mapping
 
@@ -256,6 +232,9 @@ final class AuthService: ObservableObject {
         if message.contains("network") || message.contains("offline") || message.contains("connection") {
             return "No internet connection. Check your network and try again."
         }
+        if message.contains("duplicate") && message.contains("username") {
+            return "That username is already taken. Try a different one."
+        }
         return "Something went wrong: \(error.localizedDescription)"
     }
 }
@@ -266,12 +245,14 @@ enum AuthError: LocalizedError {
     case demoMode
     case notAuthenticated
     case profileNotFound
+    case notConfigured
 
     var errorDescription: String? {
         switch self {
         case .demoMode: return "Supabase is not configured. Running in demo mode."
         case .notAuthenticated: return "You must be signed in."
         case .profileNotFound: return "Profile not found."
+        case .notConfigured: return "Backend is not configured."
         }
     }
 }

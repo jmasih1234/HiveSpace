@@ -10,12 +10,12 @@ struct SupabaseAuthRepository: AuthRepository {
         self.client = client
     }
 
-    func signIn(email: String, password: String) async throws -> HSUser {
+    func signIn(email: String, password: String) async throws -> UUID {
         let session = try await client.auth.signIn(email: email, password: password)
-        return try await fetchProfile(userID: session.user.id)
+        return session.user.id
     }
 
-    func signUp(email: String, password: String, displayName: String, username: String) async throws -> HSUser {
+    func signUp(email: String, password: String, displayName: String, username: String) async throws -> UUID? {
         let result = try await client.auth.signUp(
             email: email,
             password: password,
@@ -24,12 +24,14 @@ struct SupabaseAuthRepository: AuthRepository {
                 "username": .string(username)
             ]
         )
-        return try await fetchProfile(userID: result.user.id)
+        // nil session means email confirmation is required
+        if result.session == nil { return nil }
+        return result.user.id
     }
 
-    func restoreSession() async throws -> HSUser? {
+    func restoreSession() async throws -> UUID? {
         let session = try await client.auth.session
-        return try await fetchProfile(userID: session.user.id)
+        return session.user.id
     }
 
     func signOut() async throws {
@@ -38,20 +40,6 @@ struct SupabaseAuthRepository: AuthRepository {
 
     func resetPassword(email: String) async throws {
         try await client.auth.resetPasswordForEmail(email)
-    }
-
-    // MARK: - Private
-
-    private func fetchProfile(userID: UUID) async throws -> HSUser {
-        let row: ProfileRow = try await client
-            .from("profiles")
-            .select()
-            .eq("id", value: userID.uuidString)
-            .single()
-            .execute()
-            .value
-
-        return row.toHSUser()
     }
 }
 

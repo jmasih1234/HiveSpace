@@ -172,49 +172,6 @@ final class HiveSpaceStore: ObservableObject {
         }
     }
 
-    /// Attempt to sync data with the API.
-    func syncWithServer() async {
-        guard !isOfflineMode else { return }
-        loadingState = .loading("Syncing...")
-
-        do {
-            // Fetch fresh colony data
-            let colonies: [Colony] = try await NetworkService.shared.request(
-                endpoint: .colonies,
-                body: nil as String?,
-                queryItems: nil
-            )
-            allColonies = colonies
-            if let current = colonies.first(where: { $0.id == colony.id }) {
-                colony = current
-            }
-
-            // Fetch tasks
-            let freshTasks: [HSTask] = try await NetworkService.shared.request(
-                endpoint: .tasks(colonyID: colony.id),
-                body: nil as String?,
-                queryItems: nil
-            )
-            tasks = freshTasks
-
-            // Fetch expenses
-            let freshExpenses: [Expense] = try await NetworkService.shared.request(
-                endpoint: .expenses(colonyID: colony.id),
-                body: nil as String?,
-                queryItems: nil
-            )
-            expenses = freshExpenses
-
-            loadingState = .idle
-            scheduleSave()
-        } catch is NetworkError {
-            loadingState = .idle
-            isOfflineMode = true
-        } catch {
-            loadingState = .error(error.localizedDescription)
-        }
-    }
-
     var openTasks: [HSTask] {
         tasks.filter { $0.status != .done }
     }
@@ -242,7 +199,18 @@ final class HiveSpaceStore: ObservableObject {
     }
 
     var activeCallSession: CallSession? {
-        callSessions.first(where: { $0.colonyID == colony.id && ($0.state == .active || $0.state == .incoming || $0.state == .scheduled) })
+        let colonyCalls = callSessions.filter { $0.colonyID == colony.id }
+        return colonyCalls.first(where: { $0.state == .active })
+            ?? colonyCalls.first(where: { $0.state == .incoming })
+            ?? colonyCalls
+                .filter { $0.state == .scheduled }
+                .sorted { ($0.scheduledFor ?? .distantFuture) < ($1.scheduledFor ?? .distantFuture) }
+                .first
+    }
+
+    var currentCallParticipants: [CallParticipantState] {
+        guard let call = activeCallSession else { return [] }
+        return callParticipants.filter { call.participantIDs.contains($0.id) }
     }
 
     var outstandingBalanceTotal: Double {
@@ -429,7 +397,7 @@ final class HiveSpaceStore: ObservableObject {
                     displayName: currentUser.displayName,
                     username: currentUser.username,
                     avatarURL: currentUser.avatarURL,
-                    role: .queen,
+                    role: .owner,
                     status: .active,
                     joinedAt: .now,
                     lastActiveAt: .now
@@ -479,6 +447,25 @@ final class HiveSpaceStore: ObservableObject {
         didMutate()
     }
 
+    func startCall(type: CallType) {
+        endActiveCalls()
+        let title = type == .video ? "Instant Video Call" : "Instant Voice Call"
+        let participantIDs = colony.members.map(\.id)
+        let call = CallSession(
+            id: UUID(),
+            colonyID: colony.id,
+            title: title,
+            type: type,
+            state: .active,
+            startedAt: .now,
+            scheduledFor: nil,
+            participantIDs: participantIDs
+        )
+        callSessions.insert(call, at: 0)
+        syncCallParticipants(for: participantIDs, callType: type)
+        didMutate()
+    }
+
     func scheduleCall(title: String, type: CallType, date: Date) {
         callSessions.insert(
             CallSession(
@@ -493,14 +480,18 @@ final class HiveSpaceStore: ObservableObject {
             ),
             at: 0
         )
+        didMutate()
     }
 
     func joinCall(_ call: CallSession) {
         guard let index = callSessions.firstIndex(where: { $0.id == call.id }) else {
             return
         }
+        endActiveCalls(except: call.id)
         callSessions[index].state = .active
-        callSessions[index].startedAt = .now
+        callSessions[index].startedAt = callSessions[index].startedAt ?? .now
+        syncCallParticipants(for: callSessions[index].participantIDs, callType: callSessions[index].type)
+        setCurrentUserSpeaking(false)
         didMutate()
     }
 
@@ -509,7 +500,96 @@ final class HiveSpaceStore: ObservableObject {
             return
         }
         callSessions[index].state = .ended
+        callSessions[index].startedAt = callSessions[index].startedAt ?? .now
+        setCurrentUserSpeaking(false)
         didMutate()
+    }
+
+    func toggleCurrentUserMute() {
+        ensureCurrentUserCallParticipant()
+        guard let index = callParticipants.firstIndex(where: { $0.id == currentUser.id }) else {
+            return
+        }
+        callParticipants[index].isMuted.toggle()
+        if callParticipants[index].isMuted {
+            callParticipants[index].isSpeaking = false
+        }
+        didMutate()
+    }
+
+    func toggleCurrentUserCamera() {
+        ensureCurrentUserCallParticipant()
+        guard let index = callParticipants.firstIndex(where: { $0.id == currentUser.id }) else {
+            return
+        }
+        callParticipants[index].isCameraOn.toggle()
+        didMutate()
+    }
+
+    func toggleCurrentUserSpeaking() {
+        ensureCurrentUserCallParticipant()
+        guard let index = callParticipants.firstIndex(where: { $0.id == currentUser.id }) else {
+            return
+        }
+        guard !callParticipants[index].isMuted else {
+            return
+        }
+        callParticipants[index].isSpeaking.toggle()
+        didMutate()
+    }
+
+    private func syncCallParticipants(for participantIDs: [UUID], callType: CallType) {
+        for member in colony.members where participantIDs.contains(member.id) {
+            if let index = callParticipants.firstIndex(where: { $0.id == member.id }) {
+                callParticipants[index].displayName = member.displayName
+                if member.id == currentUser.id && callType == .voice {
+                    callParticipants[index].isCameraOn = false
+                }
+            } else {
+                callParticipants.append(
+                    CallParticipantState(
+                        id: member.id,
+                        displayName: member.displayName,
+                        isMuted: member.id != currentUser.id,
+                        isCameraOn: callType == .video && member.id == currentUser.id,
+                        isSpeaking: false
+                    )
+                )
+            }
+        }
+    }
+
+    private func ensureCurrentUserCallParticipant() {
+        guard callParticipants.first(where: { $0.id == currentUser.id }) == nil else {
+            return
+        }
+        callParticipants.append(
+            CallParticipantState(
+                id: currentUser.id,
+                displayName: currentUser.displayName,
+                isMuted: false,
+                isCameraOn: activeCallSession?.type == .video,
+                isSpeaking: false
+            )
+        )
+    }
+
+    private func endActiveCalls(except activeCallID: UUID? = nil) {
+        for index in callSessions.indices {
+            guard callSessions[index].id != activeCallID else {
+                continue
+            }
+            if callSessions[index].colonyID == colony.id && callSessions[index].state == .active {
+                callSessions[index].state = .ended
+            }
+        }
+    }
+
+    private func setCurrentUserSpeaking(_ isSpeaking: Bool) {
+        guard let index = callParticipants.firstIndex(where: { $0.id == currentUser.id }) else {
+            return
+        }
+        callParticipants[index].isSpeaking = isSpeaking
     }
 
     func togglePacked(_ item: PackingItem, in trip: HiveTrip) {
@@ -965,6 +1045,7 @@ final class HiveSpaceStore: ObservableObject {
     }
 }
 
+#if DEBUG
 extension HiveSpaceStore {
     static let sample = HiveSpaceStore.makeSample()
 
@@ -987,10 +1068,10 @@ extension HiveSpaceStore {
         let ariID = UUID()
 
         let members = [
-            ColonyMember(id: you.id, displayName: "Avery", username: "@avery", avatarURL: nil, role: .queen, status: .active, joinedAt: .now.addingTimeInterval(-60 * 60 * 24 * 200), lastActiveAt: .now),
-            ColonyMember(id: mayaID, displayName: "Maya", username: "@maya", avatarURL: nil, role: .worker, status: .active, joinedAt: .now.addingTimeInterval(-60 * 60 * 24 * 180), lastActiveAt: .now.addingTimeInterval(-60 * 30)),
-            ColonyMember(id: jordanID, displayName: "Jordan", username: "@jordan", avatarURL: nil, role: .worker, status: .active, joinedAt: .now.addingTimeInterval(-60 * 60 * 24 * 160), lastActiveAt: .now.addingTimeInterval(-60 * 60 * 5)),
-            ColonyMember(id: ariID, displayName: "Ari", username: "@ari", avatarURL: nil, role: .guest, status: .active, joinedAt: .now.addingTimeInterval(-60 * 60 * 24 * 120), lastActiveAt: .now.addingTimeInterval(-60 * 60 * 20))
+            ColonyMember(id: you.id, displayName: "Avery", username: "@avery", avatarURL: nil, role: .owner, status: .active, joinedAt: .now.addingTimeInterval(-60 * 60 * 24 * 200), lastActiveAt: .now),
+            ColonyMember(id: mayaID, displayName: "Maya", username: "@maya", avatarURL: nil, role: .admin, status: .active, joinedAt: .now.addingTimeInterval(-60 * 60 * 24 * 180), lastActiveAt: .now.addingTimeInterval(-60 * 30)),
+            ColonyMember(id: jordanID, displayName: "Jordan", username: "@jordan", avatarURL: nil, role: .member, status: .active, joinedAt: .now.addingTimeInterval(-60 * 60 * 24 * 160), lastActiveAt: .now.addingTimeInterval(-60 * 60 * 5)),
+            ColonyMember(id: ariID, displayName: "Ari", username: "@ari", avatarURL: nil, role: .member, status: .active, joinedAt: .now.addingTimeInterval(-60 * 60 * 24 * 120), lastActiveAt: .now.addingTimeInterval(-60 * 60 * 20))
         ]
 
         let colony = Colony(
@@ -1339,3 +1420,4 @@ extension HiveSpaceStore {
         )
     }
 }
+#endif

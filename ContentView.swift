@@ -34,6 +34,10 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
+            // Always-present background so the screen is never fully black
+            HiveColor.background
+                .ignoresSafeArea()
+
             switch route {
             case .loading:
                 LaunchScreen()
@@ -108,14 +112,14 @@ struct ContentView: View {
     private func handleAuthStateChange(_ state: AuthState) {
         switch state {
         case .signedIn(let user):
-            // Check if user has colonies
             Task {
+                #if DEBUG
                 if authService.isDemoMode {
-                    // Demo: load sample store
                     enterDemoMode(user: user)
-                } else {
-                    await loadColonies(for: user)
+                    return
                 }
+                #endif
+                await loadColonies(for: user)
             }
 
         case .needsProfile:
@@ -204,14 +208,15 @@ struct ContentView: View {
         route = .main(colony)
     }
 
-    /// Demo mode: load sample data store directly.
+    #if DEBUG
+    /// Demo mode: load sample data store directly (DEBUG previews only).
     private func enterDemoMode(user: HSUser) {
         let sampleStore = HiveSpaceStore.sample
-        // Overwrite the user fields with the demo sign-in user
         sampleStore.currentUser = user
         store = sampleStore
         route = .main(sampleStore.colony)
     }
+    #endif
 
     private func signOut() async {
         await authService.signOut()
@@ -227,16 +232,16 @@ struct LaunchScreen: View {
 
     var body: some View {
         ZStack {
-            HiveTheme.background
+            HiveColor.backgroundFallback
                 .ignoresSafeArea()
-            VStack(spacing: 18) {
-                HiveLogoMark(size: 80, shadowOpacity: 0.2)
+            VStack(spacing: HiveSpacing.lg) {
+                HiveLogoMark(size: 72, shadowOpacity: 0.15)
                     .scaleEffect(scale)
                 Text("HiveSpace")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundStyle(HiveTheme.textPrimary)
+                    .font(HiveFont.serif(26, weight: .semibold))
+                    .foregroundStyle(HiveColor.textPrimaryFallback)
                 ProgressView()
-                    .tint(HiveTheme.pink)
+                    .tint(HiveColor.brandFallback)
             }
         }
         .onAppear {

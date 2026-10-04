@@ -2,24 +2,32 @@ import Foundation
 
 // MARK: - Supabase Environment Configuration
 
-/// Loads Supabase credentials from Xcode scheme environment variables.
+/// Provides Supabase credentials at runtime.
 ///
-/// To configure for development:
-/// 1. In Xcode, go to Product > Scheme > Edit Scheme > Run > Environment Variables
-/// 2. Add `SUPABASE_URL` with your project URL (e.g. https://abc123.supabase.co)
-/// 3. Add `SUPABASE_ANON_KEY` with your project's public anon/publishable key
+/// **Debug builds:** Reads from Xcode scheme environment variables.
+/// If not set, the app enters demo mode (previews, offline development).
 ///
-/// These values are stored in xcuserdata/ which is already gitignored,
-/// so your credentials never enter source control.
+/// **Release builds:** Reads from compiled constants in `SupabaseReleaseKeys.swift`.
+/// That file is gitignored — create it from the example before archiving.
+/// If the file is missing, the Release build will fail at compile time.
 ///
-/// See `supabase-config.example.json` in the project root for reference values.
+/// The anon key is a PUBLIC publishable key. Never include the service-role key.
 enum SupabaseEnvironment {
+
     static var url: String {
-        ProcessInfo.processInfo.environment["SUPABASE_URL"] ?? ""
+        #if DEBUG
+        return ProcessInfo.processInfo.environment["SUPABASE_URL"] ?? ""
+        #else
+        return SupabaseReleaseKeys.url
+        #endif
     }
 
     static var anonKey: String {
-        ProcessInfo.processInfo.environment["SUPABASE_ANON_KEY"] ?? ""
+        #if DEBUG
+        return ProcessInfo.processInfo.environment["SUPABASE_ANON_KEY"] ?? ""
+        #else
+        return SupabaseReleaseKeys.anonKey
+        #endif
     }
 
     /// Returns true only when both URL and key are set to real values.
@@ -29,5 +37,6 @@ enum SupabaseEnvironment {
         return !u.isEmpty
             && !k.isEmpty
             && u != "https://your-project.supabase.co"
+            && k != "your-anon-key"
     }
 }

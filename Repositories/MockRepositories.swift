@@ -11,45 +11,23 @@ import Foundation
 // MARK: Mock Auth
 
 struct MockAuthRepository: AuthRepository {
-    func signIn(email: String, password: String) async throws -> HSUser {
+    func signIn(email: String, password: String) async throws -> UUID {
         try await Task.sleep(for: .milliseconds(500))
-        return makeDemoUser(email: email)
+        return UUID()
     }
 
-    func signUp(email: String, password: String, displayName: String, username: String) async throws -> HSUser {
+    func signUp(email: String, password: String, displayName: String, username: String) async throws -> UUID? {
         try await Task.sleep(for: .milliseconds(500))
-        return HSUser(
-            id: UUID(),
-            displayName: displayName,
-            username: username,
-            email: email,
-            avatarURL: nil,
-            colonyIDs: [],
-            createdAt: .now
-        )
+        return UUID()
     }
 
-    func restoreSession() async throws -> HSUser? {
+    func restoreSession() async throws -> UUID? {
         nil
     }
 
     func signOut() async throws {}
 
     func resetPassword(email: String) async throws {}
-
-    private func makeDemoUser(email: String) -> HSUser {
-        let name = email.components(separatedBy: "@").first?.capitalized ?? "User"
-        let uname = email.components(separatedBy: "@").first ?? "user"
-        return HSUser(
-            id: UUID(),
-            displayName: name,
-            username: uname,
-            email: email,
-            avatarURL: nil,
-            colonyIDs: [],
-            createdAt: .now
-        )
-    }
 }
 
 // MARK: Mock Profile

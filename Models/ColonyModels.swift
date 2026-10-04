@@ -41,9 +41,9 @@ enum ColonyType: String, Codable, CaseIterable {
 }
 
 enum MemberRole: String, Codable, CaseIterable {
-    case queen = "Queen"
-    case worker = "Worker"
-    case guest = "Guest"
+    case owner = "owner"
+    case admin = "admin"
+    case member = "member"
 }
 
 enum MemberStatus: String, Codable, CaseIterable {

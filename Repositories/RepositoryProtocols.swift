@@ -10,10 +10,15 @@ import Foundation
 // MARK: Auth
 
 /// Handles sign-in, sign-up, session restore, sign-out, and password reset.
+/// Returns user IDs rather than full profiles so profile fetching
+/// goes through ProfileRepository (single responsibility).
 protocol AuthRepository: Sendable {
-    func signIn(email: String, password: String) async throws -> HSUser
-    func signUp(email: String, password: String, displayName: String, username: String) async throws -> HSUser
-    func restoreSession() async throws -> HSUser?
+    /// Sign in and return the authenticated user ID.
+    func signIn(email: String, password: String) async throws -> UUID
+    /// Sign up. Returns the user ID, or nil if email confirmation is pending.
+    func signUp(email: String, password: String, displayName: String, username: String) async throws -> UUID?
+    /// Restore an existing session. Returns the user ID, or nil if no valid session.
+    func restoreSession() async throws -> UUID?
     func signOut() async throws
     func resetPassword(email: String) async throws
 }

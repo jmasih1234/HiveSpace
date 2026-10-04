@@ -7,7 +7,7 @@ struct ColonyOnboardingView: View {
 
     @State private var mode: OnboardingMode = .choose
     @State private var colonyName = ""
-    @State private var colonyEmoji = "🐝"
+    @State private var colonyEmoji = "🏠"
     @State private var joinCode = ""
     @State private var isBusy = false
     @State private var errorMessage: String?

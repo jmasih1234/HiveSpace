@@ -1,136 +1,103 @@
 import SwiftUI
 
+// MARK: - Logo Mark
+
+/// The HiveSpace logo — a simple house outline in the brand color.
 struct HiveLogoMark: View {
     var size: CGFloat = 32
-    var shadowOpacity: Double = 0.12
+    var shadowOpacity: Double = 0.10
 
     var body: some View {
         ZStack {
-            Ellipse()
-                .fill(Color(red: 0.88, green: 0.80, blue: 0.90).opacity(0.8))
-                .frame(width: size * 0.78, height: size * 0.14)
-                .offset(y: size * 0.34)
+            // House shape
+            HiveHouseShape()
+                .fill(HiveColor.brandFallback)
+                .shadow(color: HiveColor.brandFallback.opacity(shadowOpacity), radius: size * 0.06, x: 0, y: size * 0.04)
 
-            VStack(spacing: -size * 0.055) {
-                hiveCell(
-                    size: size * 0.24,
-                    topColor: Color(red: 0.98, green: 0.47, blue: 0.68),
-                    bottomColor: Color(red: 0.90, green: 0.20, blue: 0.51)
-                )
-
-                HStack(spacing: -size * 0.04) {
-                    hiveCell(
-                        size: size * 0.24,
-                        topColor: Color(red: 0.84, green: 0.54, blue: 0.90),
-                        bottomColor: Color(red: 0.63, green: 0.23, blue: 0.77)
-                    )
-                    hiveCell(
-                        size: size * 0.24,
-                        topColor: Color(red: 0.84, green: 0.54, blue: 0.90),
-                        bottomColor: Color(red: 0.63, green: 0.23, blue: 0.77)
-                    )
-                }
-
-                HStack(spacing: -size * 0.04) {
-                    hiveCell(
-                        size: size * 0.24,
-                        topColor: Color(red: 0.71, green: 0.53, blue: 0.95),
-                        bottomColor: Color(red: 0.42, green: 0.20, blue: 0.83)
-                    )
-                    hiveCell(
-                        size: size * 0.24,
-                        topColor: Color(red: 0.71, green: 0.53, blue: 0.95),
-                        bottomColor: Color(red: 0.42, green: 0.20, blue: 0.83)
-                    )
-                    hiveCell(
-                        size: size * 0.24,
-                        topColor: Color(red: 0.71, green: 0.53, blue: 0.95),
-                        bottomColor: Color(red: 0.42, green: 0.20, blue: 0.83)
-                    )
-                }
-            }
-            .compositingGroup()
-            .shadow(color: HiveTheme.purple.opacity(shadowOpacity), radius: size * 0.08, x: 0, y: size * 0.05)
+            // Window detail
+            RoundedRectangle(cornerRadius: size * 0.04, style: .continuous)
+                .fill(Color.white.opacity(0.45))
+                .frame(width: size * 0.22, height: size * 0.22)
+                .offset(y: size * 0.10)
         }
         .frame(width: size, height: size)
     }
-
-    private func hiveCell(size: CGFloat, topColor: Color, bottomColor: Color) -> some View {
-        VStack(spacing: 0) {
-            Rectangle()
-                .fill(topColor)
-                .frame(height: size * 0.54)
-            Rectangle()
-                .fill(bottomColor)
-                .frame(height: size * 0.46)
-        }
-        .frame(width: size, height: size * 0.92)
-        .clipShape(HiveHexCell())
-        .overlay {
-            HiveHexCell()
-                .stroke(Color.white.opacity(0.5), lineWidth: max(0.8, size * 0.018))
-        }
-    }
 }
 
-private struct HiveHexCell: Shape {
+/// A simple house silhouette shape.
+private struct HiveHouseShape: Shape {
     func path(in rect: CGRect) -> Path {
-        let inset = rect.width * 0.18
-        let midX = rect.midX
-
+        let w = rect.width
+        let h = rect.height
         var path = Path()
-        path.move(to: CGPoint(x: midX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.minY + rect.height * 0.25))
-        path.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.maxY - rect.height * 0.25))
-        path.addLine(to: CGPoint(x: midX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.minX + inset, y: rect.maxY - rect.height * 0.25))
-        path.addLine(to: CGPoint(x: rect.minX + inset, y: rect.minY + rect.height * 0.25))
+
+        // Roof peak
+        path.move(to: CGPoint(x: w * 0.5, y: h * 0.08))
+        // Roof right
+        path.addLine(to: CGPoint(x: w * 0.90, y: h * 0.42))
+        // Wall right
+        path.addLine(to: CGPoint(x: w * 0.90, y: h * 0.88))
+        // Bottom right corner
+        path.addQuadCurve(
+            to: CGPoint(x: w * 0.84, y: h * 0.92),
+            control: CGPoint(x: w * 0.90, y: h * 0.92)
+        )
+        // Bottom
+        path.addLine(to: CGPoint(x: w * 0.16, y: h * 0.92))
+        // Bottom left corner
+        path.addQuadCurve(
+            to: CGPoint(x: w * 0.10, y: h * 0.88),
+            control: CGPoint(x: w * 0.10, y: h * 0.92)
+        )
+        // Wall left
+        path.addLine(to: CGPoint(x: w * 0.10, y: h * 0.42))
         path.closeSubpath()
+
         return path
     }
 }
 
+// MARK: - Page Header
+
+/// Editorial page header with optional serif title.
 struct HivePageHeader<Trailing: View>: View {
     let eyebrow: String?
     let title: String
     let subtitle: String?
+    var useSerif: Bool = true
     @ViewBuilder let trailing: Trailing
 
     init(
         eyebrow: String? = nil,
         title: String,
         subtitle: String? = nil,
+        useSerif: Bool = true,
         @ViewBuilder trailing: () -> Trailing = { EmptyView() }
     ) {
         self.eyebrow = eyebrow
         self.title = title
         self.subtitle = subtitle
+        self.useSerif = useSerif
         self.trailing = trailing()
     }
 
     var body: some View {
         HStack(alignment: .top) {
-            HStack(alignment: .top, spacing: 12) {
-                HiveLogoMark(size: 34, shadowOpacity: 0.08)
-                    .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 6) {
+                if let eyebrow {
+                    Text(eyebrow)
+                        .font(HiveFont.caption)
+                        .foregroundStyle(HiveColor.textSecondaryFallback)
+                }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    if let eyebrow {
-                        Text(eyebrow.uppercased())
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
-                            .tracking(1.8)
-                            .foregroundStyle(HiveTheme.textSecondary)
-                    }
+                Text(title)
+                    .font(useSerif ? HiveFont.screenTitle : HiveFont.sectionTitle)
+                    .foregroundStyle(HiveColor.textPrimaryFallback)
 
-                    Text(title)
-                        .font(.system(size: 32, weight: .bold, design: .rounded))
-                        .foregroundStyle(HiveTheme.textPrimary)
-
-                    if let subtitle {
-                        Text(subtitle)
-                            .font(.system(size: 14, weight: .regular, design: .rounded))
-                            .foregroundStyle(HiveTheme.textSecondary)
-                    }
+                if let subtitle {
+                    Text(subtitle)
+                        .font(HiveFont.caption)
+                        .foregroundStyle(HiveColor.textSecondaryFallback)
                 }
             }
 
@@ -140,6 +107,8 @@ struct HivePageHeader<Trailing: View>: View {
     }
 }
 
+// MARK: - Colony Switcher
+
 struct ColonySwitcherButton: View {
     @EnvironmentObject private var store: HiveSpaceStore
     @State private var showingColonyPicker = false
@@ -148,23 +117,24 @@ struct ColonySwitcherButton: View {
         Button {
             showingColonyPicker = true
         } label: {
-            HStack(spacing: 8) {
-                ColonyBadge(colonyName: store.colony.name, size: 26)
+            HStack(spacing: 6) {
+                Text(store.colony.emoji)
+                    .font(.system(size: 16))
                 Text(store.colony.name)
                     .lineLimit(1)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: 10, weight: .semibold))
             }
-            .font(.system(size: 13, weight: .semibold, design: .rounded))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(HiveTheme.surface)
-            .foregroundStyle(HiveTheme.textPrimary)
+            .font(HiveFont.captionMedium)
+            .padding(.horizontal, HiveSpacing.md)
+            .padding(.vertical, HiveSpacing.sm)
+            .background(HiveColor.surfaceFallback)
+            .foregroundStyle(HiveColor.textPrimaryFallback)
             .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(HiveTheme.border, lineWidth: 1)
+                RoundedRectangle(cornerRadius: HiveRadius.button, style: .continuous)
+                    .strokeBorder(HiveColor.borderFallback, lineWidth: 1)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: HiveRadius.button, style: .continuous))
         }
         .sheet(isPresented: $showingColonyPicker) {
             ColonyPickerSheet()
@@ -189,7 +159,8 @@ struct ColonyPickerSheet: View {
                             dismiss()
                         } label: {
                             HStack(spacing: 12) {
-                                ColonyBadge(colonyName: colony.name, size: 34)
+                                Text(colony.emoji)
+                                    .font(.system(size: 24))
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(colony.name)
                                     Text(colony.type.rawValue)
@@ -199,7 +170,7 @@ struct ColonyPickerSheet: View {
                                 Spacer()
                                 if colony.id == store.colony.id {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(HiveTheme.pink)
+                                        .foregroundStyle(HiveColor.brandFallback)
                                 }
                             }
                         }
@@ -233,6 +204,8 @@ struct ColonyPickerSheet: View {
     }
 }
 
+// MARK: - Colony Badge
+
 struct ColonyBadge: View {
     let colonyName: String
     var size: CGFloat = 32
@@ -243,6 +216,8 @@ struct ColonyBadge: View {
     }
 }
 
+// MARK: - Empty State
+
 struct HiveEmptyState: View {
     let title: String
     let message: String
@@ -250,57 +225,198 @@ struct HiveEmptyState: View {
 
     var body: some View {
         HiveCard {
-            VStack(spacing: 12) {
+            VStack(spacing: HiveSpacing.md) {
                 Image(systemName: systemImage)
                     .font(.system(size: 28, weight: .semibold))
-                    .foregroundStyle(HiveTheme.pink)
+                    .foregroundStyle(HiveColor.textSecondaryFallback)
                 Text(title)
-                    .font(.system(size: 18, weight: .semibold, design: .rounded))
-                    .foregroundStyle(HiveTheme.textPrimary)
+                    .font(HiveFont.sectionTitle)
+                    .foregroundStyle(HiveColor.textPrimaryFallback)
                 Text(message)
-                    .font(.system(size: 14, weight: .regular, design: .rounded))
-                    .foregroundStyle(HiveTheme.textSecondary)
+                    .font(HiveFont.caption)
+                    .foregroundStyle(HiveColor.textSecondaryFallback)
                     .multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity)
         }
     }
 }
-#Preview {
+
+// MARK: - Section Header
+
+/// Reusable section header with serif title and optional trailing action.
+struct HiveSectionHeader: View {
+    let title: String
+    var action: String?
+    var onAction: (() -> Void)?
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+                .font(HiveFont.sectionTitle)
+                .foregroundStyle(HiveColor.textPrimaryFallback)
+            Spacer()
+            if let action, let onAction {
+                Button(action) { onAction() }
+                    .font(HiveFont.captionMedium)
+                    .foregroundStyle(HiveColor.textSecondaryFallback)
+            }
+        }
+    }
+}
+
+// MARK: - Health Indicator
+
+/// Compact Hive Health display with sage-colored progress.
+struct HiveHealthIndicator: View {
+    let score: Int
+    let grade: String
+    var summary: String?
+
+    private var progressColor: Color {
+        switch score {
+        case 80...100: return HiveColor.sage
+        case 60..<80: return HiveColor.honey
+        case 40..<60: return HiveColor.clay
+        default: return HiveColor.destructive
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: HiveSpacing.md) {
+            HStack(alignment: .firstTextBaseline, spacing: HiveSpacing.sm) {
+                Text("\(score)")
+                    .font(HiveFont.serif(42, weight: .bold))
+                    .foregroundStyle(HiveColor.textPrimaryFallback)
+                Text("/ 100")
+                    .font(HiveFont.caption)
+                    .foregroundStyle(HiveColor.textSecondaryFallback)
+                Spacer()
+                Text(grade)
+                    .font(HiveFont.captionMedium)
+                    .foregroundStyle(HiveColor.textSecondaryFallback)
+                    .padding(.horizontal, HiveSpacing.sm)
+                    .padding(.vertical, HiveSpacing.xs)
+                    .background(HiveColor.surfaceElevatedFallback)
+                    .clipShape(RoundedRectangle(cornerRadius: HiveRadius.sm, style: .continuous))
+            }
+
+            ProgressView(value: Double(score), total: 100)
+                .tint(progressColor)
+                .scaleEffect(x: 1, y: 1.4, anchor: .center)
+
+            if let summary {
+                Text(summary)
+                    .font(HiveFont.caption)
+                    .foregroundStyle(HiveColor.textSecondaryFallback)
+            }
+        }
+    }
+}
+
+// MARK: - Task Row
+
+/// Lightweight task row — no card wrapping.
+struct HiveTaskRow: View {
+    let title: String
+    var subtitle: String?
+    var statusColor: Color = HiveColor.textSecondaryFallback
+    var statusLabel: String?
+    var isCompleted: Bool = false
+    var onToggle: (() -> Void)?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: HiveSpacing.md) {
+            Button {
+                onToggle?()
+            } label: {
+                Image(systemName: isCompleted ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 20, weight: .regular))
+                    .foregroundStyle(isCompleted ? HiveColor.sage : HiveColor.textSecondaryFallback)
+            }
+            .buttonStyle(.plain)
+
+            VStack(alignment: .leading, spacing: HiveSpacing.xs) {
+                Text(title)
+                    .font(HiveFont.bodyMedium)
+                    .foregroundStyle(isCompleted ? HiveColor.textSecondaryFallback : HiveColor.textPrimaryFallback)
+                    .strikethrough(isCompleted)
+
+                if let subtitle {
+                    Text(subtitle)
+                        .font(HiveFont.caption)
+                        .foregroundStyle(statusColor)
+                }
+            }
+
+            Spacer()
+
+            if let statusLabel {
+                Text(statusLabel)
+                    .font(HiveFont.label)
+                    .foregroundStyle(statusColor)
+            }
+        }
+        .padding(.vertical, HiveSpacing.sm)
+    }
+}
+
+// MARK: - Previews
+
+#Preview("Components") {
     HiveScreen {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: HiveSpacing.xxl) {
                 HivePageHeader(
-                    eyebrow: "Preview",
-                    title: "HiveSpace",
-                    subtitle: "Shared app components"
+                    eyebrow: "Good morning, Alex",
+                    title: "The Lofts"
                 ) {
                     ColonySwitcherButton()
                 }
 
                 HiveCard {
-                    HStack(spacing: 14) {
-                        HiveLogoMark(size: 52)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Component Library")
-                                .font(.system(size: 18, weight: .bold, design: .rounded))
-                                .foregroundStyle(HiveTheme.textPrimary)
-                            Text("Logo, cards, headers, and colony controls.")
-                                .font(.system(size: 14, weight: .medium, design: .rounded))
-                                .foregroundStyle(HiveTheme.textSecondary)
-                        }
-                    }
+                    HiveHealthIndicator(
+                        score: 76,
+                        grade: "Active",
+                        summary: "A great week — keep it up."
+                    )
+                }
+
+                VStack(alignment: .leading, spacing: 0) {
+                    HiveSectionHeader(title: "Today", action: "See all") {}
+                    HiveTaskRow(
+                        title: "Take out recycling",
+                        subtitle: "Due today",
+                        statusColor: HiveColor.honey
+                    )
+                    Divider()
+                    HiveTaskRow(
+                        title: "Clean kitchen",
+                        subtitle: "Due tomorrow"
+                    )
+                    Divider()
+                    HiveTaskRow(
+                        title: "Bathroom cleaned",
+                        subtitle: "Completed",
+                        isCompleted: true
+                    )
                 }
 
                 HiveEmptyState(
-                    title: "Ready to Build",
-                    message: "This preview verifies the shared component layer.",
-                    systemImage: "checkmark.seal.fill"
+                    title: "All caught up",
+                    message: "No tasks due today.",
+                    systemImage: "checkmark.seal"
                 )
+
+                HStack(spacing: HiveSpacing.md) {
+                    Button("Get Started") {}
+                        .buttonStyle(HivePrimaryButtonStyle())
+                    Button("Learn More") {}
+                        .buttonStyle(HiveGhostButtonStyle())
+                }
             }
-            .padding(24)
+            .padding(HiveSpacing.xxl)
         }
     }
     .environmentObject(HiveSpaceStore.sample)
 }
-

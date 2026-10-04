@@ -143,9 +143,9 @@ struct SupabaseColonyRepository: ColonyRepository {
         struct RoleUpdate: Encodable { let role: String }
         let dbRole: String
         switch role {
-        case .queen: dbRole = "owner"
-        case .worker: dbRole = "member"
-        case .guest: dbRole = "member"
+        case .owner: dbRole = "owner"
+        case .admin: dbRole = "admin"
+        case .member: dbRole = "member"
         }
         try await client
             .from("colony_members")
@@ -202,9 +202,9 @@ struct SupabaseColonyRepository: ColonyRepository {
                 .value
 
             let memberRole: MemberRole = switch row.role {
-            case "owner": .queen
-            case "admin": .queen
-            default: .worker
+            case "owner": .owner
+            case "admin": .admin
+            default: .member
             }
 
             members.append(ColonyMember(

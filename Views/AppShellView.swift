@@ -2,10 +2,11 @@ import SwiftUI
 
 enum AppTab: Hashable {
     case home
-    case messages
     case tasks
-    case split
-    case more
+    case expenses
+    case calls
+    case house
+    case inbox
 }
 
 struct AppShellView: View {
