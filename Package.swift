@@ -43,7 +43,10 @@ let package = Package(
             dependencies: [
                 .product(name: "Supabase", package: "supabase-swift")
             ],
-            path: "."
+            path: ".",
+            resources: [
+                .process("Assets.xcassets")
+            ]
         )
     ],
     swiftLanguageVersions: [.v6]

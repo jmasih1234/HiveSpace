@@ -7,10 +7,26 @@ import SwiftUI
 /// The dark palette is cinematic, near-black, and intimate.
 enum HiveColor {
 
+    // MARK: Premium Palette
+
+    static let warmIvory = Color(light: Color(hex: 0xF7F0E6), dark: Color(hex: 0x0B1213))
+    static let softCream = Color(light: Color(hex: 0xEDE1D1), dark: Color(hex: 0x152022))
+    static let warmPaper = Color(light: Color(hex: 0xFFF9F1), dark: Color(hex: 0x101819))
+    static let sand = Color(light: Color(hex: 0xD8BE9F), dark: Color(hex: 0x4A4036))
+    static let bronze = Color(light: Color(hex: 0xB58B5C), dark: Color(hex: 0xD2A36F))
+    static let deepEspresso = Color(hex: 0x211C18)
+    static let midnightCharcoal = Color(hex: 0x0B1213)
+    static let elevatedCharcoal = Color(hex: 0x152022)
+    static let softTeal = Color(hex: 0x6BB8A5)
+    static let mutedSage = Color(hex: 0x9CB9A2)
+    static let coral = Color(hex: 0xE18D73)
+    static let primaryLightText = Color(hex: 0xF8F4EE)
+    static let secondaryLightText = Color(hex: 0xA7AEAC)
+
     // MARK: Surfaces
 
     /// Light: warm ivory. Dark: near-black.
-    static let background = Color(light: Color(hex: 0xFAF7F2), dark: Color(hex: 0x0B0D0E))
+    static let background = Color(light: Color(hex: 0xF7F0E6), dark: Color(hex: 0x0B1213))
 
     /// Light: white. Dark: dark charcoal.
     static let surface = Color(light: .white, dark: Color(hex: 0x15191B))
@@ -35,7 +51,7 @@ enum HiveColor {
 
     /// Peach — the signature HiveSpace accent.
     /// Use selectively: primary buttons, selected nav, important actions.
-    static let brand = Color(light: Color(hex: 0xE8856F), dark: Color(hex: 0xF3A58F))
+    static let brand = Color(light: Color(hex: 0xB58B5C), dark: Color(hex: 0xD2A36F))
 
     /// Subtle brand tint for backgrounds (12% light, 8% dark).
     static let brandSubtle = Color(light: Color(red: 0.91, green: 0.52, blue: 0.44, opacity: 0.12), dark: Color(red: 0.95, green: 0.65, blue: 0.56, opacity: 0.08))
@@ -62,6 +78,20 @@ enum HiveColor {
 
     /// Green for success states (settlements confirmed, etc.).
     static let success = Color(red: 0.40, green: 0.72, blue: 0.45)
+
+    // MARK: Atmospheres
+
+    static let homeBackground = warmIvory
+    static let paperBackground = warmPaper
+    static let darkScreenBackground = midnightCharcoal
+    static let darkElevatedSurface = elevatedCharcoal
+    static let darkInsetSurface = Color(hex: 0x101819)
+    static let photoTextPrimary = primaryLightText
+    static let photoTextSecondary = secondaryLightText
+    static let premiumAccent = bronze
+    static let livingAccent = softTeal
+    static let successAccent = mutedSage
+    static let attentionAccent = coral
 }
 
 // MARK: - Fallback Aliases (backwards compatibility)
@@ -96,6 +126,8 @@ enum HiveFont {
     }
 
     // Preset sizes
+    static let heroGreeting = serif(35, weight: .semibold)
+    static let screenSerifTitle = serif(30, weight: .semibold)
     static let screenTitle = serif(28, weight: .semibold)
     static let sectionTitle = body(18, weight: .semibold)
     static let cardTitle = body(16, weight: .medium)
@@ -105,6 +137,8 @@ enum HiveFont {
     static let captionMedium = body(13, weight: .medium)
     static let label = body(11, weight: .semibold)
     static let smallDetail = body(12, weight: .regular)
+    static let metricLarge = body(34, weight: .semibold)
+    static let metricMedium = body(22, weight: .semibold)
 }
 
 // MARK: - Spacing
@@ -130,6 +164,8 @@ enum HiveRadius {
     static let card: CGFloat = 14
     /// Large feature surfaces.
     static let lg: CGFloat = 16
+    /// Photo-led hero surfaces.
+    static let hero: CGFloat = 22
     /// Buttons.
     static let button: CGFloat = 10
 }

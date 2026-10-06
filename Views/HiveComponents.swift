@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Logo Mark
 
@@ -356,6 +357,282 @@ struct HiveTaskRow: View {
                     .font(HiveFont.label)
                     .foregroundStyle(statusColor)
             }
+        }
+        .padding(.vertical, HiveSpacing.sm)
+    }
+}
+
+// MARK: - Premium Visual Components
+
+struct HiveAvatar: View {
+    let name: String
+    var size: CGFloat = 36
+    var style: AvatarStyle = .warm
+
+    enum AvatarStyle {
+        case warm
+        case dark
+        case photo
+    }
+
+    private var fill: Color {
+        switch style {
+        case .warm:
+            return HiveColor.brandSubtleFallback
+        case .dark:
+            return HiveColor.darkElevatedSurface
+        case .photo:
+            return Color.white.opacity(0.18)
+        }
+    }
+
+    private var foreground: Color {
+        switch style {
+        case .warm:
+            return HiveColor.brandFallback
+        case .dark, .photo:
+            return HiveColor.primaryLightText
+        }
+    }
+
+    var body: some View {
+        Circle()
+            .fill(fill)
+            .frame(width: size, height: size)
+            .overlay {
+                Text(String(name.prefix(1)).uppercased())
+                    .font(HiveFont.body(max(10, size * 0.38), weight: .semibold))
+                    .foregroundStyle(foreground)
+            }
+            .overlay {
+                Circle()
+                    .strokeBorder(Color.white.opacity(style == .photo ? 0.30 : 0), lineWidth: 1)
+            }
+            .accessibilityLabel(name)
+    }
+}
+
+struct HiveMemberStack: View {
+    let names: [String]
+    var size: CGFloat = 28
+    var maxVisible = 4
+    var style: HiveAvatar.AvatarStyle = .warm
+
+    var body: some View {
+        HStack(spacing: -8) {
+            ForEach(Array(names.prefix(maxVisible).enumerated()), id: \.offset) { _, name in
+                HiveAvatar(name: name, size: size, style: style)
+                    .overlay {
+                        Circle()
+                            .strokeBorder(style == .photo ? Color.white.opacity(0.45) : HiveColor.backgroundFallback, lineWidth: 1.5)
+                    }
+            }
+
+            let remaining = names.count - maxVisible
+            if remaining > 0 {
+                Text("+\(remaining)")
+                    .font(HiveFont.label)
+                    .foregroundStyle(style == .photo ? HiveColor.primaryLightText : HiveColor.textSecondaryFallback)
+                    .frame(width: size, height: size)
+                    .background(style == .photo ? Color.white.opacity(0.18) : HiveColor.surfaceElevatedFallback)
+                    .clipShape(Circle())
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(names.count) members")
+    }
+}
+
+struct HivePhotoHero<Overlay: View>: View {
+    let imageName: String
+    var customImage: UIImage?
+    let accessibilityLabel: String
+    var height: CGFloat = 520
+    var cornerRadius: CGFloat = HiveRadius.hero
+    @ViewBuilder let overlay: Overlay
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            heroImage
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: .infinity)
+                .frame(height: height)
+                .clipped()
+                .accessibilityHidden(true)
+
+            LinearGradient(
+                colors: [
+                    Color.black.opacity(0.62),
+                    Color.black.opacity(0.20),
+                    Color.black.opacity(0.56)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            LinearGradient(
+                colors: [
+                    HiveColor.deepEspresso.opacity(0.70),
+                    Color.clear,
+                    Color.black.opacity(0.64)
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+
+            overlay
+        }
+        .frame(height: height)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var heroImage: Image {
+        if let customImage {
+            return Image(uiImage: customImage)
+        }
+
+        return Image(imageName)
+    }
+}
+
+struct HiveStatusChip: View {
+    let title: String
+    let value: String
+    let systemImage: String
+    var tint: Color = HiveColor.premiumAccent
+    var style: ChipStyle = .photo
+    var action: (() -> Void)?
+
+    enum ChipStyle {
+        case photo
+        case warm
+        case dark
+    }
+
+    var body: some View {
+        Button {
+            action?()
+        } label: {
+            HStack(spacing: HiveSpacing.sm) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(iconForeground)
+                    .frame(width: 26, height: 26)
+                    .background(tint.opacity(style == .photo ? 0.95 : 0.16))
+                    .clipShape(RoundedRectangle(cornerRadius: HiveRadius.sm, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(HiveFont.label)
+                        .foregroundStyle(secondaryForeground)
+                        .lineLimit(1)
+                    Text(value)
+                        .font(HiveFont.captionMedium)
+                        .foregroundStyle(primaryForeground)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, HiveSpacing.md)
+            .padding(.vertical, HiveSpacing.sm)
+            .background(background)
+            .clipShape(RoundedRectangle(cornerRadius: HiveRadius.md, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: HiveRadius.md, style: .continuous)
+                    .strokeBorder(border, lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(action == nil)
+    }
+
+    private var background: Color {
+        switch style {
+        case .photo:
+            return Color.black.opacity(0.28)
+        case .warm:
+            return HiveColor.surfaceFallback
+        case .dark:
+            return HiveColor.darkElevatedSurface
+        }
+    }
+
+    private var border: Color {
+        switch style {
+        case .photo:
+            return Color.white.opacity(0.08)
+        case .warm:
+            return HiveColor.borderFallback
+        case .dark:
+            return Color.white.opacity(0.08)
+        }
+    }
+
+    private var primaryForeground: Color {
+        style == .warm ? HiveColor.textPrimaryFallback : HiveColor.primaryLightText
+    }
+
+    private var secondaryForeground: Color {
+        style == .warm ? HiveColor.textSecondaryFallback : HiveColor.secondaryLightText
+    }
+
+    private var iconForeground: Color {
+        style == .photo ? HiveColor.deepEspresso : tint
+    }
+}
+
+struct HiveMetricSparkline: View {
+    let values: [Double]
+    var tint: Color = HiveColor.livingAccent
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 5) {
+            ForEach(Array(values.enumerated()), id: \.offset) { _, value in
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(tint.opacity(0.35 + min(max(value, 0), 1) * 0.55))
+                    .frame(width: 5, height: max(8, 36 * min(max(value, 0), 1)))
+            }
+        }
+        .frame(height: 40, alignment: .bottom)
+        .accessibilityHidden(true)
+    }
+}
+
+struct HiveActivityRow: View {
+    let actorName: String
+    let message: String
+    let timestamp: Date
+    var tint: Color = HiveColor.premiumAccent
+    var style: HiveAvatar.AvatarStyle = .warm
+
+    var body: some View {
+        HStack(alignment: .top, spacing: HiveSpacing.md) {
+            HiveAvatar(name: actorName, size: 34, style: style)
+
+            VStack(alignment: .leading, spacing: HiveSpacing.xs) {
+                Text(message)
+                    .font(HiveFont.bodyMedium)
+                    .foregroundStyle(style == .dark ? HiveColor.primaryLightText : HiveColor.textPrimaryFallback)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(timestamp.formatted(.relative(presentation: .named)))
+                    .font(HiveFont.smallDetail)
+                    .foregroundStyle(style == .dark ? HiveColor.secondaryLightText : HiveColor.textSecondaryFallback)
+            }
+
+            Spacer()
+
+            Circle()
+                .fill(tint)
+                .frame(width: 7, height: 7)
+                .padding(.top, 6)
         }
         .padding(.vertical, HiveSpacing.sm)
     }
